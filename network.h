@@ -2,6 +2,9 @@
 
 #include "matrix.h"
 
+#include <algorithm>
+#include <functional>
+
 namespace mininnet
 {
     Vect linear(Vect& x, Matrix& W)
@@ -18,7 +21,7 @@ namespace mininnet
             const Vect& wi = W.at(i);
             for (int j = 0; j < wi.size(); ++j)
             {
-                result[i] += wi[j] * x[i];
+                result[i] += wi[j] * x[j];
             }
         }
         return result;
@@ -48,7 +51,7 @@ namespace mininnet
         double maxElem = -std::numeric_limits<double>::infinity();
         for (int i = 0; i < x.size(); ++i)
         {
-            if (x[i].get() > maxElem) maxElem = x[i].get();
+            maxElem = std::max(x[i].get(), maxElem);
         }
         Value maxVal = x[0].getTape().newValue(maxElem);
         Value total = x[0].getTape().newValue(0);
@@ -87,7 +90,7 @@ namespace mininnet
                   const std::vector<std::vector<double>>& Xs, 
                   const std::vector<double>& ys,
                   Tape& tape,             
-                  std::vector<int>& paramIndices)
+                  const std::vector<int>& paramIndices)
     {
         int step = 0;
         int batchSize = 100;

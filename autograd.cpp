@@ -75,10 +75,18 @@ Value Value::sin() const
     return _tape.newValue(std::sin(_data), { _index, 0 }, { std::cos(_data), 0 });
 }
 
+Value& Value::operator=(const Value& val)
+{
+    _data = val._data;
+    _children = val._children;
+    _localGrads = val._localGrads;
+    return *this;
+}
+
 Grad Value::backward()
 {
     auto& values = _tape.getValues();
-    std::vector<double> derivs(values.size(), 0.0);
+    std::deque<double> derivs(values.size(), 0.0);
     derivs[_index] = 1.0;
 
     for (int i = values.size() - 1; i >= 0; --i)

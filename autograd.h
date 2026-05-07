@@ -1,7 +1,7 @@
 #pragma once
 
 #include <array>
-#include <vector>
+#include <deque>
 
 
 namespace mininnet
@@ -10,7 +10,7 @@ class Value;
 
 struct Grad
 {
-    std::vector<double> derivs;
+    std::deque<double> derivs;
 
     double wrt(const Value& v) const;
 };
@@ -32,18 +32,7 @@ public:
     Value operator/(Value& other) const;
     Value sin() const;
 
-    Value& operator=(const Value& val)
-    {
-        _data = val._data;
-        _children = val._children;
-        _localGrads = val._localGrads;
-        return *this;
-    }
-
-    // Value operator/(double other)
-    // {
-    //     return *this * Value(other).pow(-1.0);
-    // }
+    Value& operator=(const Value& val);
 
     double get() const { return _data; }
     void set(double v) { _data = v; }
@@ -75,10 +64,10 @@ public:
 
     Value& newValue(double value = 0, std::array<int, 2> children = {0, 0}, std::array<double, 2> lgs = {0, 0});
     
-    std::vector<Value>& getValues() { return _values; }
+    std::deque<Value>& getValues() { return _values; }
 
 protected:
-    std::vector<Value> _values;
+    std::deque<Value> _values;
 };
 
 } // namespace mininnet

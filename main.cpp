@@ -54,9 +54,10 @@ void testMnist()
     std::cout << "Read " << Xs.size() << " input samples with " << ys.size() << " labels.\n";
     std::cout << "Read data took " << std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - startTimer).count() << " secs." << std::endl;
 
-    Matrix W1(tape, 20, 784), W2(tape, 10, 20);
+    Matrix W1(tape, 100, 784), W2(tape, 10, 100);
     std::vector<int> paramIndices = W1.getIndices();
-    paramIndices.insert(paramIndices.end(), W2.getIndices().begin(), W2.getIndices().end());
+    auto W2Indices = W2.getIndices();
+    paramIndices.insert(paramIndices.end(), W2Indices.begin(), W2Indices.end());
 
     auto mlp = [&](Vect& x)
     {
