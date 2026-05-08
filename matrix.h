@@ -46,18 +46,6 @@ struct Vect
         return _tape.getValues()[_data[i]];
     }
 
-    Vect copy() const
-    {
-        Vect vectCopy(_tape, 0);
-        vectCopy._data.reserve(_data.size());
-        for (int i = 0; i < _data.size(); ++i)
-        {
-            double d = _tape.getValues()[_data[i]].get();
-            vectCopy._data.push_back(_tape.newValue(d).getIndex());
-        }
-        return vectCopy;
-    }
-
     Vect& operator=(const Vect& other)
     {
         _data = other._data;

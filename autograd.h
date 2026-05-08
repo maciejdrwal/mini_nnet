@@ -38,7 +38,7 @@ public:
     void set(double v) { _data = v; _children = {0, 0}; _localGrads = {0, 0}; }
     int getIndex() const { return _index; }
     Tape& getTape() { return _tape; }
-    Grad backward();
+    Grad backprop() const;
 
     int getChild(int i) const { return _children[i]; }
     double getGrad(int i) const { return _localGrads[i]; }

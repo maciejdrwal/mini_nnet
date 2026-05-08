@@ -110,7 +110,7 @@ namespace mininnet
             for (int j = 0; j < batchSize; ++j)
             {
                 int sampleId =  (step * batchSize + j) % Xs.size();
-                auto xs = Xs[sampleId];
+                const auto& xs = Xs[sampleId];
                 int labelId = xs.second;
                 Vect x(tape, {xs.first.begin(), xs.first.end()});
                 auto probs = network(x);
@@ -121,7 +121,7 @@ namespace mininnet
 
             std::cout << "Loss=" << loss.get() << std::endl;
 
-            Grad grad = loss.backward();
+            Grad grad = loss.backprop();
 
             int paramCorrCount = 0;
             double paramCorrTotal = 0;
@@ -164,10 +164,10 @@ namespace mininnet
         Value sentinel = tape.newValue();
         for (int sampleId = 0; sampleId < Xs.size(); ++sampleId)
         {
-            auto xs = Xs[sampleId];
+            const auto& xs = Xs[sampleId];
             int labelId = xs.second;
             Vect x(tape, {xs.first.begin(), xs.first.end()});
-            auto probs = network(x);
+            const Vect probs = network(x);
 
             double maxElem = 0;
             int pred = 0;

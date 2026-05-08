@@ -87,15 +87,15 @@ Value& Value::operator=(const Value& val)
     return *this;
 }
 
-Grad Value::backward()
+Grad Value::backprop() const
 {
-    auto& values = _tape.getValues();
+    const auto& values = _tape.getValues();
     std::deque<double> derivs(values.size(), 0.0);
     derivs[_index] = 1.0;
 
     for (int i = values.size() - 1; i >= 0; --i)
     {
-        Value& val = values[i];
+        const Value& val = values[i];
         double deriv = derivs[i];
 
         derivs[val._children[0]] += val._localGrads[0] * deriv;
