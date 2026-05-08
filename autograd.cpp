@@ -2,8 +2,6 @@
 
 #include <cmath>
 
-#include <iostream> // TODO remove
-
 namespace mininnet
 {
 
@@ -56,26 +54,23 @@ Value Value::relu() const
 
 Value Value::neg() const
 {
-    // ???
     return *this * _tape.newValue(-1);
 }
 
 Value& Value::operator-=(const Value& other)
 {
-    //return *this + other.neg();
-    return _tape.newValue(_data - other._data, { _index, other._index }, { 1.0, -1.0 } );;
+    *this = *this + other.neg();
+    return *this;
 }
 
 Value Value::operator-(Value& other) const
 {
     return *this + other.neg();
-    //return _tape.newValue(_data - other._data, { _index, other._index }, { _data, -other._data});
 }
 
 Value Value::operator/(Value& other) const
 {
     return *this * other.pow(-1);
-    //return _tape.newValue(_data * std::pow(other._data, -1.0), { _index, other._index }, { _data, -std::pow(other._data, -2.0)});
 }
 
 Value Value::sin() const
@@ -86,6 +81,7 @@ Value Value::sin() const
 Value& Value::operator=(const Value& val)
 {
     _data = val._data;
+    _index = val._index;
     _children = val._children;
     _localGrads = val._localGrads;
     return *this;
@@ -102,18 +98,9 @@ Grad Value::backward()
         Value& val = values[i];
         double deriv = derivs[i];
 
-        // std::cout << "  val=" << val.get() << " deriv=" << deriv << " ch1=" << val._children[0] << " ch2=" << val._children[1]
-        //     << " lg0=" << val._localGrads[0] << " lg1=" << val._localGrads[1] << std::endl;
-
         derivs[val._children[0]] += val._localGrads[0] * deriv;
         derivs[val._children[1]] += val._localGrads[1] * deriv;
     }
-
-    // for (auto g : derivs)
-    // {
-    //     std::cout << g << ' ';
-    // }
-    // std::cout << "^^^ grad derivs" << std::endl;
 
     return { derivs };
 }

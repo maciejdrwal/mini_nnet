@@ -1,12 +1,11 @@
 #pragma once
 
+#include "autograd.h"
+
 #include <random>
 #include <vector>
 #include <iostream>
 #include <iomanip>
-
-#include "autograd.h"
-
 
 namespace mininnet
 {

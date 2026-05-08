@@ -3,7 +3,6 @@
 #include <array>
 #include <deque>
 
-
 namespace mininnet
 {
 class Value;
@@ -36,7 +35,7 @@ public:
     Value& operator=(const Value& val);
 
     double get() const { return _data; }
-    void set(double v) { _data = v; }
+    void set(double v) { _data = v; _children = {0, 0}; _localGrads = {0, 0}; }
     int getIndex() const { return _index; }
     Tape& getTape() { return _tape; }
     Grad backward();
@@ -57,15 +56,17 @@ protected:
     : _tape(tape), _index(index), _data(value), _children(std::move(children)), _localGrads(std::move(lgs)) {}
 };
 
-
 class Tape
 {
 public:
     Tape() = default;
 
     Value& newValue(double value = 0, std::array<int, 2> children = {0, 0}, std::array<double, 2> lgs = {0, 0});
-    
     std::deque<Value>& getValues() { return _values; }
+    void clearFromIndex(int index)
+    {
+        _values.erase(_values.begin() + index, _values.end());
+    }
 
 protected:
     std::deque<Value> _values;

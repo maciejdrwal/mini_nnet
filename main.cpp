@@ -10,8 +10,6 @@
 #include <ranges>
 #include <algorithm>
 
-using Clock = std::chrono::high_resolution_clock;
-
 using namespace mininnet;
 
 
@@ -40,7 +38,7 @@ void testIris()
     std::vector<std::pair<std::vector<double>, int>> Xs;
     std::ifstream infile("../iris/iris.data");
 
-    Clock::time_point startTimer(Clock::now());
+    utils::Clock startTimer;
     for (std::string line; std::getline(infile, line); )
     {
         const auto entries = utils::split(line, ",");
@@ -58,9 +56,9 @@ void testIris()
     std::shuffle(Xs.begin(), Xs.end(), rng);
     
     std::cout << "Read " << Xs.size() << " input samples.\n";
-    std::cout << "Read data took " << std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - startTimer).count() << " secs." << std::endl;
+    std::cout << "Read data took " << startTimer.get() << " secs." << std::endl;
 
-    Matrix W1(tape, 10, 4), W2(tape, 3, 10);
+    Matrix W1(tape, 50, 4), W2(tape, 3, 50);
     std::vector<int> paramIndices = W1.getIndices();
     auto W2Indices = W2.getIndices();
     paramIndices.insert(paramIndices.end(), W2Indices.begin(), W2Indices.end());
@@ -70,9 +68,11 @@ void testIris()
         return MLPBlock(x, W1, W2);
     };
 
+    inference(mlp, Xs, tape);
+
     training(mlp, Xs, tape, paramIndices);
 
-    inference(mlp, Xs,tape);
+    inference(mlp, Xs, tape);
 }
 
 void testMnist()
@@ -82,7 +82,7 @@ void testMnist()
     std::vector<std::pair<std::vector<double>, int>> Xs;
     std::ifstream infile("../mnist_train.csv");
 
-    Clock::time_point startTimer(Clock::now());
+    utils::Clock startTimer;
     for (std::string line; std::getline(infile, line); )
     {
         const auto entries = utils::split(line, ",");
@@ -98,7 +98,7 @@ void testMnist()
         if (Xs.size() >= 1000) break;
     }
     std::cout << "Read " << Xs.size() << " input samples.\n";
-    std::cout << "Read data took " << std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - startTimer).count() << " secs." << std::endl;
+    std::cout << "Read data took " << startTimer.get() << " secs." << std::endl;
 
     Matrix W1(tape, 100, 784), W2(tape, 10, 100);
     std::vector<int> paramIndices = W1.getIndices();
@@ -110,7 +110,9 @@ void testMnist()
         return MLPBlock(x, W1, W2);
     };
 
-    training(mlp, Xs, tape, paramIndices);
+    //inference(mlp, Xs, tape);
+
+    training(mlp, Xs, tape, paramIndices, 150, 10);
 
     inference(mlp, Xs, tape);
 }

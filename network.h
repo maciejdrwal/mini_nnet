@@ -71,29 +71,30 @@ namespace mininnet
 
     Vect MLPBlock(Vect& x, Matrix& W1, Matrix& W2)
     {
-        // Vect xResidual = x;
-        // x = rmsnorm(x);
-        // x = linear(x, W1);
-        // for (int i = 0; i < x.size(); ++i)
-        // {
-        //     x[i] = x[i].relu(); 
-        // }
-        // x = linear(x, W2);
-        // for (int i = 0; i < x.size(); ++i)
-        // {
-        //     x[i] += xResidual[i];
-        // }
+        Vect xResidual = x;
+        x = rmsnorm(x);
+        x = linear(x, W1);
+        for (int i = 0; i < x.size(); ++i)
+        {
+            x[i] = x[i].relu(); 
+        }
+        x = linear(x, W2);
+        for (int i = 0; i < x.size(); ++i)
+        {
+            x[i] += xResidual[i];
+        }
         return softmax(x);
     }
 
     void training(const std::function<Vect(Vect&)>& network, 
                   const std::vector<std::pair<std::vector<double>, int>>& Xs, 
                   Tape& tape,             
-                  const std::vector<int>& paramIndices)
+                  const std::vector<int>& paramIndices, 
+                  int batchSize = 150,
+                  int numSteps = 1000)
     {
+        utils::Clock startTimer;
         int step = 0;
-        int batchSize = 150;
-        int numSteps = 1;
         double learningRate = 0.01;
         double beta1 = 0.85;
         double beta2 = 0.99;
@@ -101,14 +102,11 @@ namespace mininnet
         std::vector<double> m(paramIndices.size(), 0.0);  // first moment buffer
         std::vector<double> v(paramIndices.size(), 0.0);  // second moment buffer
 
-        std::cout <<  Xs.size() << std::endl;
-
         Value n = tape.newValue(batchSize);
-        Value sumLoss = tape.newValue(0.0);
         while (step < numSteps)
         {
             std::cout << "Training step: " << step << std::endl;
-            sumLoss.set(0.0);
+            Value sumLoss = tape.newValue(0.0);
             for (int j = 0; j < batchSize; ++j)
             {
                 int sampleId =  (step * batchSize + j) % Xs.size();
@@ -116,15 +114,17 @@ namespace mininnet
                 int labelId = xs.second;
                 Vect x(tape, {xs.first.begin(), xs.first.end()});
                 auto probs = network(x);
-
                 sumLoss -= probs[labelId].log();
             }
 
             Value loss = sumLoss / n;
 
-            std::cout << "Loss before backward=" << loss.get() << " index=" << loss.getIndex() << std::endl;
-            
+            std::cout << "Loss=" << loss.get() << std::endl;
+
             Grad grad = loss.backward();
+
+            int paramCorrCount = 0;
+            double paramCorrTotal = 0;
 
             double lr_t = learningRate * (1 - step / numSteps); // linear learning rate decay
             for (int i = 0; i < paramIndices.size(); ++i)
@@ -136,27 +136,32 @@ namespace mininnet
                 auto m_hat = m[i] / (1 - std::pow(beta1, step + 1));
                 auto v_hat = v[i] / (1 - std::pow(beta2, step + 1));
 
-                std::cout << "i=" << i << " tape index=" << indexOnTape << " p=" << p.get() << " loss/dp=" << grad.wrt(p) << std::endl;
-                std::cout << "m_hat=" << m_hat << " v_hat=" << v_hat << " m[i]=" << m[i] << " v[i]=" << v[i] << std::endl;
-
-                double acor =  lr_t * m_hat / (std::pow(v_hat, 0.5) + eps_adam);
-                std::cout << "adam correction=" << acor << std::endl;
-                p.set(p.get() - acor);
-                std::cout << "new p=" << p.get() << std::endl;
+                double delta = lr_t * m_hat / (std::pow(v_hat, 0.5) + eps_adam);
+                if (std::abs(delta) > 1e-8)
+                {
+                    paramCorrCount++;
+                    paramCorrTotal += std::abs(delta);
+                }
+                p.set(p.get() - delta);
                 grad.derivs[indexOnTape] = 0.0;
             }
-            
-            std::cout << "loss=" << loss.get() << std::endl;
 
+            tape.clearFromIndex(n.getIndex() + 1);
+
+            std::cout << "  Corrected " << paramCorrCount << " params with total value=" << paramCorrTotal << std::endl;
+            std::cout << "  Tape size=" << tape.getValues().size() << ", Grad size=" << grad.derivs.size() << std::endl; 
             ++step;
         }
+        std::cout << "Training took " << startTimer.get() << " secs." << std::endl;
     }
 
     void inference(const std::function<Vect(Vect&)>& network, 
                    const std::vector<std::pair<std::vector<double>, int>>& Xs, 
                    Tape& tape)
     {
+        utils::Clock startTimer;
         int correct = 0;
+        Value sentinel = tape.newValue();
         for (int sampleId = 0; sampleId < Xs.size(); ++sampleId)
         {
             auto xs = Xs[sampleId];
@@ -175,10 +180,12 @@ namespace mininnet
                 }
             }
 
-            std::cout << "sample id=" << sampleId << " probs=" << probs << " pred=" << pred << " y=" << labelId << '\n';
+            //std::cout << "sample id=" << sampleId << " probs=" << probs << " pred=" << pred << " y=" << labelId << '\n';
             if (pred == labelId) correct++;
         }
-        std::cout << "correct: " << correct << "/" << Xs.size() << std::endl; 
+        tape.clearFromIndex(sentinel.getIndex() + 1);
+        std::cout << "correct: " << correct << "/" << Xs.size() << std::endl;
+        std::cout << "Inference took " << startTimer.get() << " secs." << std::endl;
     }
 
 }   // namespace mininnet
