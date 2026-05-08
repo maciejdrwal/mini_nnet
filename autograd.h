@@ -29,6 +29,7 @@ public:
     Value relu() const;
     Value neg() const;
     Value operator-(Value& other) const;
+    Value& operator-=(const Value& other);
     Value operator/(Value& other) const;
     Value sin() const;
 

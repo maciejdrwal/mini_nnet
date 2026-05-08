@@ -20,7 +20,7 @@ Value& Tape::newValue(double value, std::array<int, 2> children, std::array<doub
 
 Value& Value::operator+=(const Value& other)
 {
-    *this = _tape.newValue(_data + other._data, { _index, other._index }, { 1.0, 1.0 } );;
+    *this = _tape.newValue(_data + other._data, { _index, other._index }, { 1.0, 1.0 } );
     return *this;
 }
 
@@ -60,14 +60,22 @@ Value Value::neg() const
     return *this * _tape.newValue(-1);
 }
 
+Value& Value::operator-=(const Value& other)
+{
+    //return *this + other.neg();
+    return _tape.newValue(_data - other._data, { _index, other._index }, { 1.0, -1.0 } );;
+}
+
 Value Value::operator-(Value& other) const
 {
-    return _tape.newValue(_data - other._data, { _index, other._index }, { _data, -other._data});
+    return *this + other.neg();
+    //return _tape.newValue(_data - other._data, { _index, other._index }, { _data, -other._data});
 }
 
 Value Value::operator/(Value& other) const
 {
-    return _tape.newValue(_data * std::pow(other._data, -1.0), { _index, other._index }, { _data, -std::pow(_data, -2.0)});
+    return *this * other.pow(-1);
+    //return _tape.newValue(_data * std::pow(other._data, -1.0), { _index, other._index }, { _data, -std::pow(other._data, -2.0)});
 }
 
 Value Value::sin() const
@@ -100,6 +108,12 @@ Grad Value::backward()
         derivs[val._children[0]] += val._localGrads[0] * deriv;
         derivs[val._children[1]] += val._localGrads[1] * deriv;
     }
+
+    // for (auto g : derivs)
+    // {
+    //     std::cout << g << ' ';
+    // }
+    // std::cout << "^^^ grad derivs" << std::endl;
 
     return { derivs };
 }
