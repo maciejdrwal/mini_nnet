@@ -40,9 +40,6 @@ public:
     Tape& getTape() { return _tape; }
     Grad backprop() const;
 
-    int getChild(int i) const { return _children[i]; }
-    double getGrad(int i) const { return _localGrads[i]; }
-
     friend class Tape;
 
 protected:

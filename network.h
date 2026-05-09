@@ -1,12 +1,15 @@
 #pragma once
 
 #include "matrix.h"
+#include "mem_usage.h"
 
 #include <algorithm>
 #include <functional>
 
 namespace mininnet
 {
+    using LabeledData = std::vector<std::pair<std::vector<double>, int>>;
+
     Vect linear(Vect& x, Matrix& W)
     {
         if (x.size() != W.numCols())
@@ -87,7 +90,7 @@ namespace mininnet
     }
 
     void training(const std::function<Vect(Vect&)>& network, 
-                  const std::vector<std::pair<std::vector<double>, int>>& Xs, 
+                  const LabeledData& Xs, 
                   Tape& tape,             
                   const std::vector<int>& paramIndices, 
                   int batchSize = 150,
@@ -150,18 +153,18 @@ namespace mininnet
 
             std::cout << "  Corrected " << paramCorrCount << " params with total value=" << paramCorrTotal << std::endl;
             std::cout << "  Tape size=" << tape.getValues().size() << ", Grad size=" << grad.derivs.size() << std::endl; 
+            std::cout << mem_usage::mem_usage_summary() << std::endl;
             ++step;
         }
         std::cout << "Training took " << startTimer.get() << " secs." << std::endl;
     }
 
     void inference(const std::function<Vect(Vect&)>& network, 
-                   const std::vector<std::pair<std::vector<double>, int>>& Xs, 
+                   const LabeledData& Xs, 
                    Tape& tape)
     {
         utils::Clock startTimer;
         int correct = 0;
-        Value sentinel = tape.newValue();
         for (int sampleId = 0; sampleId < Xs.size(); ++sampleId)
         {
             const auto& xs = Xs[sampleId];
@@ -179,13 +182,15 @@ namespace mininnet
                     pred = i;
                 }
             }
+            tape.clearFromIndex(x[0].getIndex());
 
             //std::cout << "sample id=" << sampleId << " probs=" << probs << " pred=" << pred << " y=" << labelId << '\n';
             if (pred == labelId) correct++;
         }
-        tape.clearFromIndex(sentinel.getIndex() + 1);
-        std::cout << "correct: " << correct << "/" << Xs.size() << std::endl;
+        
+        std::cout << "Correct predictions: " << correct << "/" << Xs.size() << std::endl;
         std::cout << "Inference took " << startTimer.get() << " secs." << std::endl;
+        std::cout << mem_usage::mem_usage_summary() << std::endl;
     }
 
 }   // namespace mininnet
