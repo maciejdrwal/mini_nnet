@@ -11,19 +11,28 @@
 
 using namespace mininnet;
 
+double defaultDataConv(const std::string& data)
+{
+    return std::atof(data.c_str());
+}
+
 void readDataFromFile(std::ifstream& infile, LabeledData& Xs, 
-                      int sampleLimit = std::numeric_limits<int>::max(), 
+                      int sampleLimit = std::numeric_limits<int>::max(),
+                      const std::function<double(const std::string&)>& labelConverter = defaultDataConv,
+                      const std::function<double(const std::string&)>& dataConverter = defaultDataConv,
                       int labelPos = 0)
 {
     for (std::string line; std::getline(infile, line); )
     {
         const auto entries = utils::split(line, ",");
-        int y = std::atoi(entries[labelPos == -1 ? entries.size() - 1 : labelPos].c_str());
+        
+        int y = labelConverter(entries[labelPos == -1 ? entries.size() - 1 : labelPos]);
         std::vector<double> row;
         row.reserve(entries.size() - 1);
-        for (int i = 1; i < entries.size(); ++i)
+        for (int i = 0; i < entries.size(); ++i)
         {
-            row.emplace_back(std::atof(entries[i].c_str()));
+            if (i == labelPos) continue;
+            row.emplace_back(dataConverter(entries[i]));
         }
         Xs.emplace_back(row, y);
         if (Xs.size() >= sampleLimit) break;
@@ -34,24 +43,16 @@ void testIris()
 {
     Tape tape;
 
-    std::map<std::string, int> labels{{"Iris-setosa", 0}, {"Iris-versicolor", 1}, {"Iris-virginica", 2}};
-    
+    auto irisLabelConv = [](const std::string& data) -> double
+    {
+        static const std::map<std::string, double> labels{{"Iris-setosa", 0.}, {"Iris-versicolor", 1.0}, {"Iris-virginica", 2.0}};
+        return labels.at(data.c_str());
+    };
     LabeledData Xs;
     std::ifstream infile("../iris/iris.data");
 
     utils::Clock startTimer;
-    for (std::string line; std::getline(infile, line); )
-    {
-        const auto entries = utils::split(line, ",");
-        std::vector<double> row;
-        row.reserve(entries.size() - 1);
-        int y = labels.at(entries[4].c_str());
-        for (int i = 0; i < 4; ++i)
-        {
-            row.emplace_back(std::atof(entries[i].c_str()));
-        }
-        Xs.emplace_back(row, y);
-    }
+    readDataFromFile(infile, Xs, 150, irisLabelConv, defaultDataConv, 4);
 
     std::default_random_engine rng{};
     std::shuffle(Xs.begin(), Xs.end(), rng);
@@ -84,11 +85,11 @@ void testMnist()
     std::ifstream infile("../mnist_train.csv");
 
     utils::Clock startTimer;
-    readDataFromFile(infile, Xs, 3000);
+    readDataFromFile(infile, Xs, 10000);
     std::cout << "Read " << Xs.size() << " input samples.\n";
     std::cout << "Read data took " << startTimer.get() << " secs." << std::endl;
 
-    Matrix W1(tape, 5, 784), W2(tape, 10, 5);
+    Matrix W1(tape, 400, 784), W2(tape, 10, 400);
     std::vector<int> paramIndices = W1.getIndices();
     auto W2Indices = W2.getIndices();
     paramIndices.insert(paramIndices.end(), W2Indices.begin(), W2Indices.end());
@@ -98,9 +99,9 @@ void testMnist()
         return MLPBlock(x, W1, W2);
     };
 
-    inference(mlp, Xs, tape);
+    //inference(mlp, Xs, tape);
 
-    training(mlp, Xs, tape, paramIndices, 150, 1);
+    training(mlp, Xs, tape, paramIndices, 150, 50);
 
     LabeledData XsTest;
     std::ifstream infileTest("../mnist_test.csv");
