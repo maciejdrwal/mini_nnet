@@ -23,7 +23,7 @@ struct Vect
 
     Vect(Tape& tape, const std::vector<int>& indices) : _tape(tape), _data(indices) {}
 
-    Vect(Tape& tape, std::initializer_list<double> ilist) : _tape(tape)
+    Vect(Tape& tape, const std::initializer_list<double> ilist) : _tape(tape)
     {
         _data.reserve(ilist.size());
         for (const auto d : ilist)
@@ -44,6 +44,20 @@ struct Vect
     Value& operator[](int i) const
     {
         return _tape.getValues()[_data[i]];
+    }
+
+    Vect slice(int from, int to) const
+    {
+        if (to <= from || to >= _data.size())
+        {
+            throw std::runtime_error("Invalid slice indexing");
+        }
+        Vect result(_tape, to - from);
+        for (int i = 0; i < to - from; ++i)
+        {
+            result._data[i] = _data[from + i];
+        }
+        return result;
     }
 
     Vect& operator=(const Vect& other)
@@ -117,29 +131,7 @@ protected:
     std::vector<std::vector<int>> _data;
 };
 
-std::ostream& operator<<(std::ostream& stream, const Matrix& mat)
-{
-    stream << std::setprecision(4);
-    for (int i = 0; i < mat.numRows(); ++i)
-    {
-        for (int j = 0; j < mat.numCols(); ++j)
-        {
-            stream << mat.at(i, j).get() << ' ';
-        }
-        stream << '\n';
-    }
-    return stream;
-}
-
-std::ostream& operator<<(std::ostream& stream, const Vect& vect)
-{
-    stream << std::setprecision(4) << '[';
-    for (const auto& i : vect._data)
-    {
-        stream << vect._tape.getValues()[i].get() << ' ';
-    }
-    stream << ']';
-    return stream;
-}
+std::ostream& operator<<(std::ostream& stream, const Matrix& mat);
+std::ostream& operator<<(std::ostream& stream, const Vect& vect);
 
 } // namespace mininnet

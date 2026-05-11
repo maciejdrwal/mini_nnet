@@ -60,6 +60,7 @@ public:
 
     Value& newValue(double value = 0, std::array<int, 2> children = {0, 0}, std::array<double, 2> lgs = {0, 0});
     std::deque<Value>& getValues() { return _values; }
+    size_t size() const { return _values.size(); }
     void clearFromIndex(int index)
     {
         _values.erase(_values.begin() + index, _values.end());
