@@ -16,9 +16,7 @@ namespace mininnet
         std::vector<Vect>& keys, std::vector<Vect>& values, 
         int numHeads = 4);
 
-    void training(/*const std::function<Vect(Vect&)>& network, 
-                  const LabeledData& Xs, */
-                  const std::function<Value(Tape&, int)>& processBatch, 
+    void training(const std::function<Value(Tape&, int)>& processBatch, 
                   Tape& tape,             
                   const std::vector<int>& paramIndices, 
                   int numSteps = 1000);

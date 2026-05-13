@@ -48,7 +48,7 @@ struct Vect
 
     Vect slice(int from, int to) const
     {
-        if (to <= from || to >= _data.size())
+        if (to <= from || to > _data.size())
         {
             throw std::runtime_error("Invalid slice indexing");
         }
@@ -80,19 +80,7 @@ class Matrix
 {
 public:
     // m - rows, n - columns
-    Matrix(Tape& tape, size_t m, size_t n) : _tape(tape)
-    {
-        std::cout << "constructing matrix with " << m << " rows and " << n << " columns\n";
-        //static std::random_device rd{};
-        static std::mt19937 gen{123};
-        static std::normal_distribution<double> distr(0.0, 0.08);
-        for (int i = 0; i < m; ++i)
-        {
-            std::vector<int> row(n);
-            std::generate(row.begin(), row.end(), [&](){ return tape.newValue(distr(gen)).getIndex(); });
-            _data.emplace_back(std::move(row));
-        }
-    }
+    Matrix(Tape& tape, size_t m, size_t n);
 
     const Value& at(int i, int j) const
     {

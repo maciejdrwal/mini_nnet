@@ -82,75 +82,71 @@ namespace mininnet
         {
             x[i] += xResidual[i];
         }
-        return softmax(x);
+        return x;
     }
 
     Vect AttentionBlock(Vect& x, Matrix& Wq, Matrix& Wk, Matrix& Wv, Matrix& Wo,
-        std::vector<Vect>& keys, std::vector<Vect>& values, 
-        int numHeads)
+                        std::vector<Vect>& keys, std::vector<Vect>& values, int numHeads)
     {
+        Tape& tape = x[0].getTape();
         const int dimEmbed = x.size();
-        const int headDim = dimEmbed / numHeads;
-        Value headDimSqrt = x[0].getTape().newValue(std::pow(headDim, 0.5));
+        const int dimHead = dimEmbed / numHeads;
+        Value dimHeadSqrt = tape.newValue(std::pow(dimHead, 0.5));
 
-        Vect xResidual = x;
+        Vect xRes = x;
         x = rmsnorm(x);
-        auto q = linear(x, Wq);
-        auto k = linear(x, Wk);
-        auto v = linear(x, Wv);
+        Vect q = linear(x, Wq);
+        Vect k = linear(x, Wk);
+        Vect v = linear(x, Wv);
         keys.push_back(k);
         values.push_back(v);
-        Vect xAttn(x[0].getTape(), dimEmbed /* = numHeads * headDim */);
 
-        // note: can be computed in parallel
+        Vect xAttn(tape, dimEmbed);
+
         for (int h = 0; h < numHeads; ++h)
         {
-            int hs = h * headDim;
-            Vect q_h = q.slice(hs, hs + headDim);
+            int hs = h * dimHead;
+            Vect q_h = q.slice(hs, hs + dimHead);            
             std::vector<Vect> k_h, v_h;
             for (int i = 0; i < keys.size(); ++i)
             {
-                k_h.emplace_back(keys[i].slice(hs, hs + headDim));
+                k_h.push_back(keys[i].slice(hs, hs + dimHead));
             }
             for (int i = 0; i < values.size(); ++i)
             {
-                v_h.emplace_back(values[i].slice(hs, hs + headDim));
+                v_h.push_back(values[i].slice(hs, hs + dimHead));
             }
 
-            Vect attnLogits(x[0].getTape(), k_h.size());
-            for (int i = 0; i < k_h.size(); ++i)
+            Vect attnLogits(tape, k_h.size());
+            for (int t = 0; t < k_h.size(); ++t)
             {
-                Value s = x[0].getTape().newValue(0.0);
-                for (int j = 0; j < headDim; ++j)
+                for (int j = 0; j < dimHead; ++j)
                 {
-                    s += q_h[j] * k_h[i][j];
+                    attnLogits[t] += q_h[j] * k_h[t][j];
                 }
-                attnLogits[i] = s / headDimSqrt;
+                attnLogits[t] = attnLogits[t] / dimHeadSqrt;
             }
             Vect attnWeights = softmax(attnLogits);
-
-            Vect headOut(x[0].getTape(), headDim, 0.0);
-            for (int j = 0; j < headDim; ++j)
+            Vect headOut(tape, dimHead);
+            for (int j = 0; j < dimHead; ++j)
             {
-                for (int i = 0; i < v_h.size(); ++i)
+                for (int t = 0; t < v_h.size(); ++t)
                 {
-                    headOut[j] += attnWeights[i] * v_h[i][j];
+                    headOut[j] += attnWeights[t] * v_h[t][j];
                 }
-                xAttn[h * headDim + j] = headOut[j];
+                xAttn[hs + j] = headOut[j];
             }
         }
 
         x = linear(xAttn, Wo);
         for (int i = 0; i < x.size(); ++i)
         {
-            x[i] += xResidual[i];
+            x[i] += xRes[i];
         }
         return x;
     }
 
-    void training(/*const std::function<Vect(Vect&)>& network, 
-                  const LabeledData& Xs,*/
-                  const std::function<Value(Tape&, int)>& processBatch, 
+    void training(const std::function<Value(Tape&, int)>& processBatch, 
                   Tape& tape,             
                   const std::vector<int>& paramIndices, 
                   int numSteps)
@@ -171,8 +167,6 @@ namespace mininnet
 
             Value loss = processBatch(tape, step);
             
-            std::cout << "Loss=" << loss.get() << std::endl;
-
             Grad grad = loss.backprop();
 
             int paramCorrCount = 0;
@@ -198,11 +192,13 @@ namespace mininnet
                 grad.derivs[indexOnTape] = 0.0;
             }
 
+            std::cout << "Loss=" << loss.get() << std::endl;
+
             tape.clearFromIndex(startPos);
 
             std::cout << "  Corrected " << paramCorrCount << " params with total value=" << paramCorrTotal << std::endl;
             std::cout << "  Tape size=" << tape.getValues().size() << ", Grad size=" << grad.derivs.size() << std::endl; 
-            std::cout << mem_usage::mem_usage_summary() << std::endl;
+            if (step % 10 == 0) std::cout << mem_usage::mem_usage_summary() << std::endl;
             ++step;
         }
         std::cout << "Training took " << startTimer.get() << " secs." << std::endl;
@@ -233,7 +229,6 @@ namespace mininnet
             }
             tape.clearFromIndex(x[0].getIndex());
 
-            //std::cout << "sample id=" << sampleId << " probs=" << probs << " pred=" << pred << " y=" << labelId << '\n';
             if (pred == labelId) correct++;
         }
         

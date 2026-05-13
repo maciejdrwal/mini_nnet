@@ -86,7 +86,8 @@ void testIris()
 
     auto mlp = [&](Vect& x)
     {
-        return MLPBlock(x, W1, W2);
+        x = MLPBlock(x, W1, W2);
+        return softmax(x);
     };
     auto processBatch = [&](Tape& tape, int step) -> Value
     {
@@ -117,7 +118,8 @@ void testMnist()
 
     auto mlp = [&](Vect& x)
     {
-        return MLPBlock(x, W1, W2);
+        x = MLPBlock(x, W1, W2);
+        return softmax(x);
     };
     auto processBatch = [&](Tape& tape, int step) -> Value
     {
@@ -153,18 +155,26 @@ void testGPT()
     std::default_random_engine rng{};
     std::shuffle(Xs.begin(), Xs.end(), rng);
 
-    std::cout << "Vocab size=" << uchars.size() << std::endl;
     std::cout << "Read " << Xs.size() << " input samples.\n";
     std::cout << "Read data took " << startTimer.get() << " secs." << std::endl;
 
+    const int BOS = uchars.size();
+    int vocabSize = uchars.size() + 1;
+    std::cout << "Vocab size=" << vocabSize << std::endl;
     std::map<char, int> vocab;
+    std::map<int, char> vocabRev;
     int index = 0;
-    for (auto ch : uchars) vocab[ch] = index++;
-    const int BOS = vocab.size();
+    for (auto ch : uchars) 
+    {
+        vocab[ch] = index;
+        vocabRev[index] = ch;
+        ++index;
+    }
+    
     constexpr int numLayers = 1;
-    constexpr int dimEmbed = 16;
-    constexpr int blockSize = 16;
-    constexpr int numHeads = 4;
+    constexpr int dimEmbed = 32;
+    constexpr int blockSize = 48;
+    constexpr int numHeads = 8;
     struct Weights
     {
         Weights(Tape& tape, int vocabSize) 
@@ -192,7 +202,7 @@ void testGPT()
 
         Matrix WTE, WPE, LMH, WQ, WK, WV, WO, M1, M2;
         Tape& _tape;
-    } weights(tape, uchars.size());
+    } weights(tape, vocabSize);
 
     auto gpt = [&](int tokenId, int posId, std::vector<Vect>& keys, std::vector<Vect>& values)
     {
@@ -209,20 +219,20 @@ void testGPT()
         x = AttentionBlock(x, weights.WQ, weights.WK, weights.WV, weights.WO, keys, values, numHeads);
         x = MLPBlock(x, weights.M1, weights.M2);
         
-        x = linear(x, weights.LMH);
-        return x;
+        Vect logits = linear(x, weights.LMH);
+        return logits;
     };
 
     // training
     auto processBatch = [&](Tape& tape, int step) -> Value
     {
-        std::string doc = Xs[step % Xs.size()];
+        const std::string& doc = Xs[step % Xs.size()];
         std::vector<int> tokens{ BOS };
         for (auto ch : doc) tokens.push_back(vocab.at(ch));
+        tokens.push_back(BOS);
         int n = std::min(static_cast<size_t>(blockSize), tokens.size() - 1);
         
-        std::vector<Vect> keys, values;
-        //Vect losses(tape, n);
+        std::vector<Vect> keys{}, values{}; // TODO: deque? reserve?
         Value sumLoss = tape.newValue(0.0);
         for (int posId = 0; posId < n; ++posId)
         {
@@ -237,7 +247,45 @@ void testGPT()
         return sumLoss;
     };
 
-    training(processBatch, tape, weights.getIndices(), 1);
+    std::cout << "All weights = " << weights.getIndices().size() << std::endl;
+
+    training(processBatch, tape, weights.getIndices(), 1000);
+
+    // inference
+    std::random_device rd{};
+    std::mt19937 gen{42};
+    std::default_random_engine generator;
+    
+    Value temperature = tape.newValue(0.5);
+    for (int sampleIdx = 0; sampleIdx < 20; ++sampleIdx)
+    {
+        std::vector<Vect> keys, values; // TODO: deque? reserve?
+        int tokenId = BOS;
+        std::string sample;
+        for (int posId = 0; posId < blockSize; ++posId)
+        {
+            Vect logits = gpt(tokenId, posId, keys, values);
+            for (int i = 0; i < logits.size(); ++i)
+            {
+                logits[i] = logits[i] / temperature;
+            }
+            Vect probs = softmax(logits);
+            std::vector<double> probsValues(probs.size(), 0.0); 
+            for (int i = 0; i < probs.size(); ++i)
+            {
+                probsValues[i] = probs[i].get();
+            }
+            std::discrete_distribution<int> distribution(probsValues.begin(), probsValues.end());
+            tokenId = distribution(gen);
+            if (tokenId == BOS)
+            {
+                break;
+            }
+            sample += vocabRev.at(tokenId);
+        }
+        std::cout << "Sample #" << sampleIdx << ": " << sample << std::endl; 
+    }
+
 }
 
 // TODO:
@@ -248,6 +296,6 @@ void testGPT()
 int main()
 {
     //testIris();
-    testMnist();
-    //testGPT();
+    //testMnist();
+    testGPT();
 }
