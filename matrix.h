@@ -112,6 +112,9 @@ public:
         return result; 
     }
 
+    void serialize(const std::string& filename);
+    void deserialize(const std::string& filename);
+
     friend std::ostream& operator<<(std::ostream& stream, const Matrix& mat);
 
 protected:

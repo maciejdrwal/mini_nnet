@@ -35,7 +35,7 @@ namespace mininnet
         {
             ms += x[i] * x[i];
         }
-        ms = ((ms + eps)/ d).pow(0.5);
+        ms = ((ms + eps) / d).pow(0.5);
 
         Vect result(x[0].getTape(), x.size());
         for (int i = 0; i < x.size(); ++i)
@@ -53,7 +53,7 @@ namespace mininnet
             maxElem = std::max(x[i].get(), maxElem);
         }
         Value maxVal = x[0].getTape().newValue(maxElem);
-        Value total = x[0].getTape().newValue(0);
+        Value total = x[0].getTape().newValue(0.0);
         Vect exps(x[0].getTape(), x.size());
         for (int i = 0; i < x.size(); ++i)
         {
@@ -166,6 +166,13 @@ namespace mininnet
             std::cout << "Training step: " << step << std::endl;
 
             Value loss = processBatch(tape, step);
+
+            std::cout << "Loss=" << loss.get() << std::endl;
+            if (std::isnan(loss.get()))
+            {
+                std::cout << "NaN encountered during step=" << step << std::endl;
+                std::exit(0);
+            }
             
             Grad grad = loss.backprop();
 
@@ -191,8 +198,6 @@ namespace mininnet
                 p.set(p.get() - delta);
                 grad.derivs[indexOnTape] = 0.0;
             }
-
-            std::cout << "Loss=" << loss.get() << std::endl;
 
             tape.clearFromIndex(startPos);
 

@@ -3,6 +3,8 @@
 #include "matrix.h"
 #include "network.h"
 
+#include "mem_usage.h"
+
 #include <iostream>
 #include <fstream>
 #include <map>
@@ -144,13 +146,16 @@ void testGPT()
 
     std::vector<std::string> Xs;
     std::ifstream infile("../data/movie_titles.txt");
+    //std::ifstream infile("../data/AllCombined.txt");
     utils::Clock startTimer;
 
     std::set<char> uchars;
     for (std::string line; std::getline(infile, line); )
     {
+        if (line.empty()) continue;
         Xs.push_back(utils::strip(line));
         uchars.insert(line.begin(), line.end());
+        if (Xs.size() > 10000) break;
     }
     std::default_random_engine rng{};
     std::shuffle(Xs.begin(), Xs.end(), rng);
@@ -171,40 +176,59 @@ void testGPT()
         ++index;
     }
     
-    constexpr int numLayers = 1;
-    constexpr int dimEmbed = 32;
-    constexpr int blockSize = 48;
+    constexpr int numLayers = 4;
+    constexpr int dimEmbed = 128;
+    constexpr int blockSize = 64;
     constexpr int numHeads = 8;
     struct Weights
     {
-        Weights(Tape& tape, int vocabSize) 
-        : WTE(tape, vocabSize, dimEmbed),
-          WPE(tape, blockSize, dimEmbed),
-          LMH(tape, vocabSize, dimEmbed),
-          WQ(tape, dimEmbed, dimEmbed),
-          WK(tape, dimEmbed, dimEmbed), 
-          WV(tape, dimEmbed, dimEmbed),
-          WO(tape, dimEmbed, dimEmbed),
-          M1(tape, numHeads * dimEmbed, dimEmbed),
-          M2(tape, dimEmbed, numHeads * dimEmbed),
-          _tape(tape) {}
+        std::array<Matrix, numLayers> initialize(Tape& tape, int m, int n)
+        {
+            return std::apply([&](auto... _) { return std::array{((void)_, Matrix(tape, m, n))...}; }, std::array<int, numLayers>{});
+        }
 
-          std::vector<int> getIndices() const
-          {
+        Weights(Tape& tape, int vocabSize) 
+        : _tape(tape)
+        , WTE(tape, vocabSize, dimEmbed)
+        , WPE(tape, blockSize, dimEmbed)
+        , LMH(tape, vocabSize, dimEmbed)
+        , WQ(initialize(tape, dimEmbed, dimEmbed))
+        , WK(initialize(tape, dimEmbed, dimEmbed))
+        , WV(initialize(tape, dimEmbed, dimEmbed))
+        , WO(initialize(tape, dimEmbed, dimEmbed))
+        , M1(initialize(tape, numHeads * dimEmbed, dimEmbed))
+        , M2(initialize(tape, dimEmbed, numHeads * dimEmbed))
+        {}
+
+        std::vector<int> getIndices() const
+        {
             std::vector<int> result;
-            for (const auto& w : { WTE, WPE, LMH, WQ, WK, WV, WO, M1, M2 })
+            for (const auto& w : {WTE, WPE, LMH})
             {
-                auto indices = w.getIndices();
+                const auto indices = w.getIndices();
                 result.insert(result.end(), indices.begin(), indices.end());
             }
+            for (int i = 0; i < numLayers; ++i)
+            {
+                for (const auto &w : {WQ[i], WK[i], WV[i], WO[i], M1[i], M2[i]})
+                {
+                    auto indices = w.getIndices();
+                    result.insert(result.end(), indices.begin(), indices.end());
+                }
+            }
             return result;
-          }
+        }
 
-        Matrix WTE, WPE, LMH, WQ, WK, WV, WO, M1, M2;
+        Matrix WTE, WPE, LMH;
+        std::array<Matrix, numLayers> WQ, WK, WV, WO, M1, M2;
         Tape& _tape;
     } weights(tape, vocabSize);
 
-    auto gpt = [&](int tokenId, int posId, std::vector<Vect>& keys, std::vector<Vect>& values)
+    std::cout << mem_usage::mem_usage_summary() << std::endl;
+
+    auto gpt = [&](int tokenId, int posId, 
+                   std::array<std::vector<Vect>, numLayers>& keys, 
+                   std::array<std::vector<Vect>, numLayers>& values)
     {
         Vect tokenEmb = weights.WTE.at(tokenId);
         Vect posEmb = weights.WPE.at(posId);
@@ -215,24 +239,18 @@ void testGPT()
         }
         x = rmsnorm(x);
 
-        // TODO: repeat for numLayers
-        x = AttentionBlock(x, weights.WQ, weights.WK, weights.WV, weights.WO, keys, values, numHeads);
-        x = MLPBlock(x, weights.M1, weights.M2);
-        
+        for (int i = 0; i < numLayers; ++i)
+        {
+            x = AttentionBlock(x, weights.WQ[i], weights.WK[i], weights.WV[i], weights.WO[i], keys[i], values[i], numHeads);
+            x = MLPBlock(x, weights.M1[i], weights.M2[i]);
+        }
         Vect logits = linear(x, weights.LMH);
         return logits;
     };
 
-    // training
-    auto processBatch = [&](Tape& tape, int step) -> Value
+    auto processDoc = [&](Tape& tape, const std::vector<int>& tokens, int n)
     {
-        const std::string& doc = Xs[step % Xs.size()];
-        std::vector<int> tokens{ BOS };
-        for (auto ch : doc) tokens.push_back(vocab.at(ch));
-        tokens.push_back(BOS);
-        int n = std::min(static_cast<size_t>(blockSize), tokens.size() - 1);
-        
-        std::vector<Vect> keys{}, values{}; // TODO: deque? reserve?
+        std::array<std::vector<Vect>, numLayers> keys{}, values{}; // TODO: deque? reserve?
         Value sumLoss = tape.newValue(0.0);
         for (int posId = 0; posId < n; ++posId)
         {
@@ -240,26 +258,56 @@ void testGPT()
             int targetId = tokens[posId + 1];
             Vect logits = gpt(tokenId, posId, keys, values);
             Vect probs = softmax(logits);
-            sumLoss -= probs.at(targetId).log();
+
+            if (probs.at(targetId).get() < 1e-16)
+            {
+                auto it1 = vocabRev.find(tokenId);
+                auto ch1 = it1 != vocabRev.end() ? std::string{it1->second} : "BOS";
+                auto it2 = vocabRev.find(targetId);
+                auto ch2 = it2 != vocabRev.end() ? std::string{it2->second} : "BOS";
+                std::cout << "WARNING: target probability is zero at pos=" << posId << " token=" << ch1 << " target=" << ch2 << std::endl;
+                probs.at(targetId).set(1e-16);
+            }
+            sumLoss -= probs.at(targetId).log();    
         }
-        Value N = tape.newValue(n);
-        sumLoss = sumLoss / N;
         return sumLoss;
     };
 
-    std::cout << "All weights = " << weights.getIndices().size() << std::endl;
+    // training
+    auto processBatch = [&](Tape& tape, int step) -> Value
+    {
+        constexpr int batchSize = 10;
+        int totalN = 0;
+        Value batchLoss = tape.newValue(0.0);
+        const int bs = step * batchSize;
+        for (int i = bs; i < bs + batchSize; ++i)
+        {
+            const std::string& doc = Xs[i % Xs.size()];
+            std::vector<int> tokens{ BOS };
+            for (auto ch : doc) tokens.push_back(vocab.at(ch));
+            tokens.push_back(BOS);
+            int n = std::min(static_cast<size_t>(blockSize), tokens.size() - 1);
+            totalN += n;
 
-    training(processBatch, tape, weights.getIndices(), 1000);
+            std::cout << "Processing doc " << i << ": " << doc << std::endl;
+    
+            batchLoss += processDoc(tape, tokens, n);
+        }
+        Value N = tape.newValue(totalN);
+        return batchLoss / N;
+    };
+
+    std::cout << "Total number of weights: " << weights.getIndices().size() << std::endl;
+    training(processBatch, tape, weights.getIndices(), 200);
 
     // inference
-    std::random_device rd{};
-    std::mt19937 gen{42};
-    std::default_random_engine generator;
+    //std::random_device rd{};
+    std::mt19937 gen{123};
     
     Value temperature = tape.newValue(0.5);
-    for (int sampleIdx = 0; sampleIdx < 20; ++sampleIdx)
+    for (int sampleIdx = 0; sampleIdx < 40; ++sampleIdx)
     {
-        std::vector<Vect> keys, values; // TODO: deque? reserve?
+        std::array<std::vector<Vect>, numLayers> keys, values; // TODO: deque? reserve?
         int tokenId = BOS;
         std::string sample;
         for (int posId = 0; posId < blockSize; ++posId)
