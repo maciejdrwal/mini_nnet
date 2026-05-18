@@ -6,7 +6,7 @@
 
 namespace mininnet
 {
-    Vect linear(Vect& x, Matrix& W)
+    Vect NeuralNetwork::linear(const Vect& x, const Matrix& W) const
     {
         if (x.size() != W.numCols())
         {
@@ -14,7 +14,7 @@ namespace mininnet
                                      " cols="  + std::to_string(W.numCols()) + " rows=" + std::to_string(W.numRows()));
         }
 
-        Vect result(x[0].getTape(), W.numRows());
+        Vect result(_tape, W.numRows());
         for (int i = 0; i < W.numRows(); ++i)
         {
             const Vect& wi = W.at(i);
@@ -26,18 +26,18 @@ namespace mininnet
         return result;
     }
 
-    Vect rmsnorm(Vect& x)
+    Vect NeuralNetwork::rmsnorm(const Vect& x) const
     {
-        Value ms = x[0].getTape().newValue(0);
-        Value eps = x[0].getTape().newValue(1e-5);
-        Value d = x[0].getTape().newValue(x.size());
+        Value ms = _tape.newValue(0);
+        Value eps = _tape.newValue(1e-5);
+        Value d = _tape.newValue(x.size());
         for (int i = 0; i < x.size(); ++i)
         {
             ms += x[i] * x[i];
         }
         ms = ((ms + eps) / d).pow(0.5);
 
-        Vect result(x[0].getTape(), x.size());
+        Vect result(_tape, x.size());
         for (int i = 0; i < x.size(); ++i)
         {
             result[i] = x[i] * ms; 
@@ -45,22 +45,22 @@ namespace mininnet
         return result;
     }
 
-    Vect softmax(Vect& x)
+    Vect NeuralNetwork::softmax(const Vect& x) const
     {
         double maxElem = -std::numeric_limits<double>::infinity();
         for (int i = 0; i < x.size(); ++i)
         {
             maxElem = std::max(x[i].get(), maxElem);
         }
-        Value maxVal = x[0].getTape().newValue(maxElem);
-        Value total = x[0].getTape().newValue(0.0);
-        Vect exps(x[0].getTape(), x.size());
+        Value maxVal = _tape.newValue(maxElem);
+        Value total = _tape.newValue(0.0);
+        Vect exps(_tape, x.size());
         for (int i = 0; i < x.size(); ++i)
         {
             exps[i] = (x[i] - maxVal).exp();
             total += exps[i];
         }
-        Vect result(x[0].getTape(), x.size());
+        Vect result(_tape, x.size());
         for (int i = 0; i < x.size(); ++i)
         {
             result[i] = exps[i] / total;
@@ -68,7 +68,7 @@ namespace mininnet
         return result;
     }
 
-    Vect MLPBlock(Vect& x, Matrix& W1, Matrix& W2)
+    Vect NeuralNetwork::MLPBlock(Vect& x, const Matrix& W1, const Matrix& W2) const
     {
         Vect xResidual = x;
         x = rmsnorm(x);
@@ -85,13 +85,12 @@ namespace mininnet
         return x;
     }
 
-    Vect AttentionBlock(Vect& x, Matrix& Wq, Matrix& Wk, Matrix& Wv, Matrix& Wo,
-                        std::vector<Vect>& keys, std::vector<Vect>& values, int numHeads)
+    Vect NeuralNetwork::AttentionBlock(Vect& x, const Matrix& Wq, const Matrix& Wk, const Matrix& Wv, const Matrix& Wo,
+                        std::vector<Vect>& keys, std::vector<Vect>& values, int numHeads) const
     {
-        Tape& tape = x[0].getTape();
         const int dimEmbed = x.size();
         const int dimHead = dimEmbed / numHeads;
-        Value dimHeadSqrt = tape.newValue(std::pow(dimHead, 0.5));
+        Value dimHeadSqrt = _tape.newValue(std::pow(dimHead, 0.5));
 
         Vect xRes = x;
         x = rmsnorm(x);
@@ -101,7 +100,7 @@ namespace mininnet
         keys.push_back(k);
         values.push_back(v);
 
-        Vect xAttn(tape, dimEmbed);
+        Vect xAttn(_tape, dimEmbed);
 
         for (int h = 0; h < numHeads; ++h)
         {
@@ -117,7 +116,7 @@ namespace mininnet
                 v_h.push_back(values[i].slice(hs, hs + dimHead));
             }
 
-            Vect attnLogits(tape, k_h.size());
+            Vect attnLogits(_tape, k_h.size());
             for (int t = 0; t < k_h.size(); ++t)
             {
                 for (int j = 0; j < dimHead; ++j)
@@ -127,7 +126,7 @@ namespace mininnet
                 attnLogits[t] = attnLogits[t] / dimHeadSqrt;
             }
             Vect attnWeights = softmax(attnLogits);
-            Vect headOut(tape, dimHead);
+            Vect headOut(_tape, dimHead);
             for (int j = 0; j < dimHead; ++j)
             {
                 for (int t = 0; t < v_h.size(); ++t)
@@ -146,10 +145,7 @@ namespace mininnet
         return x;
     }
 
-    void training(const std::function<Value(Tape&, int)>& processBatch, 
-                  Tape& tape,             
-                  const std::vector<int>& paramIndices, 
-                  int numSteps)
+    void NeuralNetwork::training(int numSteps)
     {
         utils::Clock startTimer;
         int step = 0;
@@ -157,21 +153,20 @@ namespace mininnet
         double beta1 = 0.85;
         double beta2 = 0.99;
         double eps_adam = 1e-8;
-        std::vector<double> m(paramIndices.size(), 0.0);  // first moment buffer
-        std::vector<double> v(paramIndices.size(), 0.0);  // second moment buffer
-        int startPos = tape.size();
+        std::vector<double> m(_paramIndices.size(), 0.0);  // first moment buffer
+        std::vector<double> v(_paramIndices.size(), 0.0);  // second moment buffer
+        int startPos = _tape.size();
 
         while (step < numSteps)
         {
             std::cout << "Training step: " << step << std::endl;
 
-            Value loss = processBatch(tape, step);
+            Value loss = processBatch(step);
 
             std::cout << "Loss=" << loss.get() << std::endl;
             if (std::isnan(loss.get()))
             {
-                std::cout << "NaN encountered during step=" << step << std::endl;
-                std::exit(0);
+                throw std::runtime_error("NaN encountered during step=" + std::to_string(step));
             }
             
             Grad grad = loss.backprop();
@@ -180,10 +175,10 @@ namespace mininnet
             double paramCorrTotal = 0;
 
             double lr_t = learningRate * (1 - step / numSteps); // linear learning rate decay
-            for (int i = 0; i < paramIndices.size(); ++i)
+            for (int i = 0; i < _paramIndices.size(); ++i)
             {
-                int indexOnTape = paramIndices[i];
-                Value& p = tape.getValues()[indexOnTape];
+                int indexOnTape = _paramIndices[i];
+                Value& p = _tape.getValues()[indexOnTape];
                 m[i] = beta1 * m[i] + (1 - beta1) * grad.wrt(p);
                 v[i] = beta2 * v[i] + (1 - beta2) * grad.wrt(p) * grad.wrt(p);
                 auto m_hat = m[i] / (1 - std::pow(beta1, step + 1));
@@ -199,19 +194,35 @@ namespace mininnet
                 grad.derivs[indexOnTape] = 0.0;
             }
 
-            tape.clearFromIndex(startPos);
+            _tape.clearFromIndex(startPos);
 
             std::cout << "  Corrected " << paramCorrCount << " params with total value=" << paramCorrTotal << std::endl;
-            std::cout << "  Tape size=" << tape.getValues().size() << ", Grad size=" << grad.derivs.size() << std::endl; 
+            std::cout << "  Tape size=" << _tape.getValues().size() << ", Grad size=" << grad.derivs.size() << std::endl; 
             if (step % 10 == 0) std::cout << mem_usage::mem_usage_summary() << std::endl;
             ++step;
         }
         std::cout << "Training took " << startTimer.get() << " secs." << std::endl;
     }
 
-    void inference(const std::function<Vect(Vect&)>& network, 
-                   const LabeledData& Xs, 
-                   Tape& tape)
+
+    Value Classifier::processBatchSupervised(int step, int batchSize) const
+    {
+        Value n = _tape.newValue(batchSize);
+        Value sumLoss = _tape.newValue(0.0);
+        for (int j = 0; j < batchSize; ++j)
+        {
+            int sampleId = (step * batchSize + j) % _Xs.size();
+            const auto &xs = _Xs[sampleId];
+            int labelId = xs.second;
+            Vect x(_tape, {xs.first.begin(), xs.first.end()});
+            auto probs = evaluate(x);
+            sumLoss -= probs[labelId].log();
+        }
+        Value loss = sumLoss / n;
+        return loss;
+    }
+
+    void Classifier::inference(const LabeledData& Xs) const
     {
         utils::Clock startTimer;
         int correct = 0;
@@ -219,8 +230,8 @@ namespace mininnet
         {
             const auto& xs = Xs[sampleId];
             int labelId = xs.second;
-            Vect x(tape, {xs.first.begin(), xs.first.end()});
-            const Vect probs = network(x);
+            Vect x(_tape, {xs.first.begin(), xs.first.end()});
+            const Vect probs = evaluate(x);
 
             double maxElem = 0;
             int pred = 0;
@@ -232,7 +243,7 @@ namespace mininnet
                     pred = i;
                 }
             }
-            tape.clearFromIndex(x[0].getIndex());
+            _tape.clearFromIndex(x[0].getIndex());
 
             if (pred == labelId) correct++;
         }

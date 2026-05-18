@@ -29,4 +29,6 @@ namespace mininnet::utils
 
     std::vector<std::string> split(std::string s, const std::string& delimiter);
     std::string strip(std::string str);
+    bool replace(std::string& str, const std::string& from, const std::string& to);
+    void replaceAll(std::string& str, const std::string& from, const std::string& to);
 }

@@ -5,6 +5,58 @@
 
 namespace mininnet
 {
+    Vect::Vect(Tape& tape, size_t m, double d) : _tape(tape)
+    {
+        _data.reserve(m);
+        for (int i = 0; i < m; ++i)
+        {
+            _data.push_back(tape.newValue(d).getIndex());
+        }
+    }
+
+    Vect::Vect(Tape& tape, const std::initializer_list<double> ilist) : _tape(tape)
+    {
+        _data.reserve(ilist.size());
+        for (const auto d : ilist)
+        {
+            _data.push_back(tape.newValue(d).getIndex());
+        }
+    }
+
+    Value& Vect::operator[](int i) const
+    {
+        return _tape.getValues()[_data[i]];
+    }
+    
+    Vect& Vect::operator=(const Vect& other)
+    {
+        _data = other._data;
+        return *this;
+    }
+
+    Value& Vect::at(int i) const
+    {
+        if (i > _data.size() || i < 0)
+        {
+            throw std::runtime_error("Invalid vector subscript");
+        }
+        return operator[](i);
+    }
+
+    Vect Vect::slice(int from, int to) const
+    {
+        if (to <= from || to > _data.size())
+        {
+            throw std::runtime_error("Invalid slice indexing");
+        }
+        Vect result(_tape, to - from);
+        for (int i = 0; i < to - from; ++i)
+        {
+            result._data[i] = _data[from + i];
+        }
+        return result;
+    }
+
     Matrix::Matrix(Tape& tape, size_t m, size_t n) : _tape(tape)
     {
         std::cout << "constructing matrix with " << m << " rows and " << n << " columns\n";
@@ -17,6 +69,32 @@ namespace mininnet
             std::generate(row.begin(), row.end(), [&](){ return tape.newValue(distr(gen)).getIndex(); });
             _data.emplace_back(std::move(row));
         }
+    }
+
+    const Value& Matrix::at(int i, int j) const
+    {
+        if (i >= numRows() || j >= numCols())
+        {
+            throw std::runtime_error("Invalid matrix subscripts");
+        }
+        return _tape.getValues()[_data[i][j]];
+    }
+
+    Vect Matrix::at(int i) const
+    {
+        const std::vector<int>& indices = _data[i];
+        return Vect(_tape, indices);
+    }
+
+    std::vector<int> Matrix::getIndices() const 
+    {
+        std::vector<int> result;
+        result.reserve(numRows() * numCols()); 
+        for (const auto& row : _data)
+        {
+            result.insert(result.end(), row.begin(), row.end());
+        }
+        return result; 
     }
 
     void Matrix::serialize(const std::string& filename)
