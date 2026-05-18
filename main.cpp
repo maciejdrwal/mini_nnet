@@ -145,8 +145,8 @@ void testGPT()
     Tape tape;
 
     std::vector<std::string> Xs;
-    std::ifstream infile("../data/movie_titles.txt");
-    //std::ifstream infile("../data/AllCombined.txt");
+    //std::ifstream infile("../data/movie_titles.txt");
+    std::ifstream infile("../data/AllCombined_one.txt");
     utils::Clock startTimer;
 
     std::set<char> uchars;
